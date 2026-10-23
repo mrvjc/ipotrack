@@ -114,9 +114,27 @@ class SyncStatus(Base):
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
+
+def _migrate_registrar_columns() -> None:
+    """Add registrar fields to existing SQLite databases without replacing data."""
+    if engine.dialect.name != "sqlite":
+        return
+
+    with engine.begin() as connection:
+        columns = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(ipos)").fetchall()
+        }
+        if "registrar_name" not in columns:
+            connection.exec_driver_sql("ALTER TABLE ipos ADD COLUMN registrar_name TEXT")
+        if "registrar_url" not in columns:
+            connection.exec_driver_sql("ALTER TABLE ipos ADD COLUMN registrar_url TEXT")
+
+
 def init_db():
     """Creates all tables in the database if they don't exist yet."""
     Base.metadata.create_all(bind=engine)
+    _migrate_registrar_columns()
     # create_all does not add columns to an existing SQLite database.
     columns = {column["name"] for column in inspect(engine).get_columns("ipos")}
     if "source_status" not in columns:
@@ -134,16 +152,6 @@ def init_db():
     if "ipoji_url" not in columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE ipos ADD COLUMN ipoji_url VARCHAR(500)"))
-    if "registrar_url" not in columns:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE ipos ADD COLUMN registrar_url VARCHAR(500)"))
-            connection.execute(text(
-                "UPDATE ipos SET registrar_name = NULL "
-                "WHERE registrar_url IS NULL "
-                "AND LOWER(TRIM(COALESCE(registrar_name, ''))) "
-                "IN ('kfin / link intime', 'link intime')"
-            ))
-
     gmp_history_columns = {
         column["name"] for column in inspect(engine).get_columns("gmp_history")
     }

@@ -14,6 +14,24 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+_REGISTRAR_ROUTES = (
+    (
+        "Bigshare Services Private Limited",
+        "https://ipo.bigshareonline.com/IPO_Status.html",
+        ("bigshare",),
+    ),
+    (
+        "KFin Technologies Limited",
+        "https://ipostatus.kfintech.com/",
+        ("kfin", "k fin"),
+    ),
+    (
+        "MUFG Intime India Private Limited",
+        "https://in.mpms.mufg.com/Initial_Offer/public-issues.html",
+        ("mufg", "link intime", "linkintime", "intime india"),
+    ),
+)
+
 
 def _clean_date(value: str | None) -> Optional[str]:
     """Drop IPOJi's far-future TBA sentinel instead of treating it as a real date."""
@@ -296,17 +314,59 @@ class IPODataAggregator:
         )
 
     @staticmethod
-    def _registrar_portal_url(registrar_name: str | None) -> Optional[str]:
-        if not registrar_name:
-            return None
-        key = re.sub(r"[^a-z0-9]+", " ", registrar_name.casefold()).strip()
-        if "bigshare" in key:
-            return "https://ipo.bigshareonline.com/IPO_Status.html"
-        if "mufg" in key or "link intime" in key or "intime" in key:
-            return "https://in.mpms.mufg.com/Initial_Offer/public-issues.html"
-        if "kfin" in key:
-            return "https://ipostatus.kfintech.com/"
-        return None
+    def _registrar_key(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
+
+    @classmethod
+    def canonicalize_registrar(
+        cls,
+        registrar_name: str | None,
+        contact_url: str | None = None,
+    ) -> tuple[str | None, str | None]:
+        """Map IPOJi registrar labels/hostnames to a canonical provider and status URL."""
+        raw_name = registrar_name.strip() if registrar_name else None
+        source_host = (urlparse(contact_url).hostname or "") if contact_url else ""
+        name_key = cls._registrar_key(raw_name) if raw_name else ""
+        host_key = cls._registrar_key(source_host) if source_host else ""
+
+        def route_for(key: str) -> tuple[str, str] | None:
+            return next(
+                (
+                    (canonical_name, portal_url)
+                    for canonical_name, portal_url, aliases in _REGISTRAR_ROUTES
+                    if any(alias in key for alias in aliases)
+                ),
+                None,
+            )
+
+        # IPOJi sometimes emits this combined label; only a registrar-specific
+        # source hostname can disambiguate it safely.
+        is_ambiguous = (
+            "kfin" in name_key
+            and any(token in name_key for token in ("link intime", "linkintime", "mufg"))
+        )
+        if is_ambiguous:
+            matched_route = route_for(host_key)
+            return (matched_route[0], matched_route[1]) if matched_route else (raw_name, None)
+
+        if name_key:
+            matched_route = route_for(name_key)
+            if matched_route:
+                return matched_route
+            return raw_name, None
+
+        matched_route = route_for(host_key)
+        if matched_route:
+            return matched_route
+
+        # Keep the observed registrar name for display, but never guess an unknown
+        # provider's allotment URL from a generic contact page.
+        return raw_name, None
+
+    @classmethod
+    def _registrar_portal_url(cls, registrar_name: str | None) -> Optional[str]:
+        """Compatibility wrapper for callers that only need the mapped URL."""
+        return cls.canonicalize_registrar(registrar_name)[1]
 
     @classmethod
     def _parse_ipo_detail_page(cls, html: str, ipoji_url: str) -> IPOJiDetailData:
@@ -343,6 +403,11 @@ class IPODataAggregator:
                         registrar_contact_url = candidate
                         break
 
+        registrar_name, registrar_url = cls.canonicalize_registrar(
+            registrar_name,
+            registrar_contact_url,
+        )
+
         data_tag = soup.find("script", id="ipo-gmp-graph-data")
         raw_observations = []
         if data_tag:
@@ -369,9 +434,7 @@ class IPODataAggregator:
         observations.sort(key=lambda observation: str(observation["timestamp"]))
         return IPOJiDetailData(
             registrar_name=registrar_name,
-            registrar_url=(
-                cls._registrar_portal_url(registrar_name) or registrar_contact_url
-            ),
+            registrar_url=registrar_url,
             gmp_observations=observations,
         )
 

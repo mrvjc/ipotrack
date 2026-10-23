@@ -150,6 +150,15 @@ def get_all_ipos(category: str = None, section: str = None, db: Session = Depend
     for ipo, current_section in filtered_ipos:
         latest_gmp = ipo.gmp_logs[-1] if ipo.gmp_logs else None
         latest_sub = ipo.sub_logs[-1] if ipo.sub_logs else None
+        registrar_name, registrar_url = IPODataAggregator.canonicalize_registrar(
+            ipo.registrar_name,
+            ipo.registrar_url,
+        )
+        allotment_action = None
+        if registrar_url and current_section == "closed":
+            allotment_action = "Check Allotment Status"
+        elif registrar_url and current_section == "listed":
+            allotment_action = "View Allotment Result"
 
         gmp_val = latest_gmp.gmp_price if latest_gmp else 0.0
         gmp_change_24h = _gmp_change_24h(ipo)
@@ -185,8 +194,9 @@ def get_all_ipos(category: str = None, section: str = None, db: Session = Depend
             "listing_data_updated_at": (
                 ipo.listing_logs[-1].recorded_at.isoformat() + "Z" if ipo.listing_logs else None
             ),
-            "registrar_name": ipo.registrar_name,
-            "registrar_url": ipo.registrar_url,
+            "registrar_name": registrar_name,
+            "registrar_url": registrar_url,
+            "allotment_action": allotment_action,
             "latest_gmp": gmp_val,
             "gmp_change_24h": gmp_change_24h,
             "estimated_listing_price": analytics.estimated_listing_price,

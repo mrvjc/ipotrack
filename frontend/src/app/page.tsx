@@ -1,16 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   TrendingUp,
   RefreshCw,
   Calculator,
-  ShieldCheck,
   ExternalLink,
-  Copy,
-  Check,
-  Plus,
-  Trash2,
   Award,
   Search,
   ArrowUpDown,
@@ -41,7 +36,9 @@ interface IPOCardData {
   listing_date: string | null;
   listing_price: number | null;
   listing_gain_pct: number | null;
-  registrar_name: string;
+  registrar_name: string | null;
+  registrar_url: string | null;
+  allotment_action: "Check Allotment Status" | "View Allotment Result" | null;
   latest_gmp: number;
   estimated_listing_price: number;
   expected_gain_pct: number;
@@ -92,17 +89,6 @@ const formatPrettyDate = (dt: string | null) => {
   });
 };
 
-interface SavedPAN {
-  label: string;
-  pan: string;
-}
-
-const REGISTRAR_URLS: Record<string, string> = {
-  "Link Intime (MUFG)": "https://in.mpms.mufg.com/Initial_Offer/public-issues.html",
-  KFintech: "https://kosmic.kfintech.com/ipostatus/",
-  Bigshare: "https://ipo.bigshareonline.com/IPO_Status.html",
-};
-
 const formatRelativeSyncTime = (value: string | null, now: number | null) => {
   if (!value || now === null) return "not yet";
   const timestamp = new Date(value).getTime();
@@ -134,22 +120,8 @@ export default function IPOTrackDashboard() {
   const [lotsCount, setLotsCount] = useState<number>(1);
   const [analytics, setAnalytics] = useState<DeepAnalytics | null>(null);
 
-  // Multi-PAN Local Vault State
-  const [pans, setPans] = useState<SavedPAN[]>([]);
-  const [newLabel, setNewLabel] = useState("");
-  const [newPan, setNewPan] = useState("");
-  const [copiedPan, setCopiedPan] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const chartFrameRef = useRef<HTMLIFrameElement>(null);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("ipotrack_pan_vault");
-    if (saved) {
-      try {
-        setPans(JSON.parse(saved));
-      } catch {}
-    }
-  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -196,23 +168,6 @@ export default function IPOTrackDashboard() {
     const interval = window.setInterval(updateCurrentTime, 60_000);
     return () => window.clearInterval(interval);
   }, []);
-
-  const savePanList = (updated: SavedPAN[]) => {
-    setPans(updated);
-    localStorage.setItem("ipotrack_pan_vault", JSON.stringify(updated));
-  };
-
-  const handleAddPan = (e: React.FormEvent) => {
-    e.preventDefault();
-    const formattedPan = newPan.trim().toUpperCase();
-    if (!newLabel.trim() || !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(formattedPan)) {
-      alert("Please enter a valid label and 10-character Indian PAN (e.g., ABCDE1234F).");
-      return;
-    }
-    savePanList([...pans, { label: newLabel.trim(), pan: formattedPan }]);
-    setNewLabel("");
-    setNewPan("");
-  };
 
   const sectionRef = useRef(section);
   const initialSyncPromise = useRef<Promise<void> | null>(null);
@@ -332,12 +287,6 @@ export default function IPOTrackDashboard() {
       setSyncing(false);
     }
     await fetchIpos(section);
-  };
-
-  const copyPan = (pan: string) => {
-    navigator.clipboard.writeText(pan);
-    setCopiedPan(pan);
-    setTimeout(() => setCopiedPan(null), 2000);
   };
 
   const displayedIpos = useMemo(() => {
@@ -486,11 +435,9 @@ export default function IPOTrackDashboard() {
           </div>
         </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left 2 Columns: IPO Pipeline & Cards */}
-          <div className="lg:col-span-2 space-y-6">
+        <section className="space-y-6">
             {/* Segmented Filter Bar + Search + Sort */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="section-tabs" role="tablist" aria-label="IPO lifecycle">
                 {(["open", "upcoming", "closed", "listed"] as const).map((tab) => (
                   <button
@@ -505,7 +452,7 @@ export default function IPOTrackDashboard() {
                 ))}
               </div>
 
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5 sm:max-w-md">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
                 <div className="relative min-w-[240px] flex-1">
                   <Search className="w-3.5 h-3.5 text-[#8B909A] absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
@@ -526,12 +473,12 @@ export default function IPOTrackDashboard() {
                   )}
                 </div>
 
-                <div className="relative">
+                <div className="relative w-44 shrink-0">
                   <ArrowUpDown className="w-3.5 h-3.5 text-[#8B909A] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as SortOption)}
-                    className="pl-8 pr-4 py-2.5 rounded-lg bg-[#0A0B0D] border border-white/[0.08] text-xs text-[#D1D5DB] focus:outline-none focus:border-white/20 cursor-pointer"
+                    className="w-full pl-8 pr-4 py-2.5 rounded-lg bg-[#0A0B0D] border border-white/[0.08] text-xs text-[#D1D5DB] focus:outline-none focus:border-white/20 cursor-pointer"
                   >
                     <option value="default">Sort: Default</option>
                     <option value="gmp_desc">Highest GMP %</option>
@@ -564,9 +511,10 @@ export default function IPOTrackDashboard() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5">
                 {displayedIpos.map((ipo) => {
                   const oneLotCapital = ipo.price_band_high * ipo.lot_size;
+                  const allotmentStage = ipo.section === "closed" || ipo.section === "listed";
                   const companyInitials = ipo.company_name
                     .trim()
                     .split(/\s+/)
@@ -609,6 +557,11 @@ export default function IPOTrackDashboard() {
                             </span>
                           )}
                         </div>
+                        {ipo.registrar_name && (
+                          <p className="mt-1 truncate text-[10px] text-[#8B909A]">
+                            Registrar: <span className="text-[#C4C7CE]">{ipo.registrar_name}</span>
+                          </p>
+                        )}
 
                         {/* Core Pricing & GMP Box */}
                         <div className="mt-4 grid grid-cols-3 gap-4 border-y border-white/[0.06] py-3.5">
@@ -730,6 +683,37 @@ export default function IPOTrackDashboard() {
                             </span>
                           </div>
                         )}
+
+                        {allotmentStage && (
+                          <div className="mt-3">
+                            {ipo.registrar_url && ipo.allotment_action ? (
+                              <a
+                                href={ipo.registrar_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label={`${ipo.allotment_action} via ${ipo.registrar_name ?? "assigned registrar"}`}
+                                className="flex items-center justify-between gap-3 rounded-md border border-groww-teal/20 bg-groww-teal/[0.06] px-3.5 py-2.5 text-xs text-groww-teal transition hover:border-groww-teal/40 hover:bg-groww-teal/[0.1]"
+                              >
+                                <span className="min-w-0">
+                                  <span className="block font-semibold">{ipo.allotment_action}</span>
+                                  <span className="mt-0.5 block truncate text-[10px] text-[#8B909A]">
+                                    via {ipo.registrar_name}
+                                  </span>
+                                </span>
+                                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                              </a>
+                            ) : (
+                              <div className="flex items-center justify-between gap-3 rounded-md border border-white/[0.05] bg-white/[0.02] px-3.5 py-2.5 text-xs">
+                                <span className="truncate text-[#C4C7CE]">
+                                  {ipo.registrar_name ?? "Registrar not announced"}
+                                </span>
+                                <span className="shrink-0 text-[10px] text-[#8B909A]">
+                                  Portal not verified
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Primary Card CTA */}
@@ -751,126 +735,7 @@ export default function IPOTrackDashboard() {
                 })}
               </div>
             )}
-          </div>
-
-          {/* Right Column: Multi-PAN Privacy Vault & Registrar Router */}
-          <div className="space-y-6">
-            <div className="p-5 rounded-xl bg-[#121316] border border-white/[0.06] space-y-5 sticky top-24">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-white/[0.04] border border-[#202227] text-[#C4C7CE]">
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-white">
-                      Multi-PAN Allotment Vault
-                    </h3>
-                    <span className="text-[11px] text-[#8B909A] block">
-                      Client-side browser storage only
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-xs text-[#8B909A] leading-relaxed">
-                Save family Demat PANs locally in your browser. Copy any PAN in one click and open the official registrar portal on allotment day.
-              </p>
-
-              {/* Add PAN Form */}
-              <form onSubmit={handleAddPan} className="space-y-2.5">
-                <input
-                  type="text"
-                  placeholder="Account Holder (e.g., Vedant / Mom)"
-                  value={newLabel}
-                  onChange={(e) => setNewLabel(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-md bg-[#121316] border border-white/[0.08] text-xs text-white placeholder:text-[#8B909A] focus:outline-none focus:border-white/20"
-                />
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    maxLength={10}
-                    placeholder="PAN (ABCDE1234F)"
-                    value={newPan}
-                    onChange={(e) => setNewPan(e.target.value.toUpperCase())}
-                    className="flex-1 px-3.5 py-2 rounded-md bg-[#121316] border border-white/[0.08] text-xs font-mono uppercase text-white placeholder:text-[#8B909A] focus:outline-none focus:border-white/20"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-md bg-white hover:bg-[#E5E5E5] text-black font-semibold text-xs flex items-center gap-1 transition cursor-pointer shrink-0"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Save
-                  </button>
-                </div>
-              </form>
-
-              {/* Saved PAN List */}
-              <div className="space-y-2">
-                {pans.length === 0 ? (
-                  <div className="p-4 rounded-md bg-[#121316]/60 border border-white/[0.04] text-center">
-                    <p className="text-xs text-[#8B909A]">
-                      No PANs saved in local vault yet.
-                    </p>
-                  </div>
-                ) : (
-                  pans.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between p-3 rounded-md bg-[#121316] border border-white/[0.06] text-xs"
-                    >
-                      <div>
-                        <span className="font-medium text-[#D1D5DB] block">
-                          {item.label}
-                        </span>
-                        <span className="font-mono text-[11px] text-[#8B909A] tracking-wider">
-                          {item.pan}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => copyPan(item.pan)}
-                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-[#C4C7CE] cursor-pointer transition"
-                          title="Copy PAN"
-                        >
-                          {copiedPan === item.pan ? (
-                            <Check className="w-3.5 h-3.5 text-[#D1D5DB]" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => savePanList(pans.filter((_, i) => i !== idx))}
-                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-[#FF5353]/10 text-[#8B909A] hover:text-[#FF5353] cursor-pointer transition"
-                          title="Delete PAN"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Direct Registrar Portals */}
-              <div className="pt-4 border-t border-white/[0.06] space-y-2">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-[#8B909A] block">
-                  Official Registrar Portals
-                </span>
-                {Object.entries(REGISTRAR_URLS).map(([name, url]) => (
-                  <a
-                    key={name}
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center justify-between p-2.5 rounded-md bg-[#121316]/70 hover:bg-white/[0.04] border border-white/[0.05] text-xs text-[#C4C7CE] hover:text-white transition"
-                  >
-                    <span>{name}</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-[#8B909A]" />
-                  </a>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        </section>
       </main>
 
       {/* Analytics and GMP history */}

@@ -136,8 +136,14 @@ def sync_ipo_to_db(db: Session, snapshots: list[IPOSnapshot]):
             if snapshot.ipoji_url:
                 ipo_record.ipoji_url = snapshot.ipoji_url
             if snapshot.registrar_name:
+                registrar_changed = (
+                    ipo_record.registrar_name != snapshot.registrar_name
+                )
                 ipo_record.registrar_name = snapshot.registrar_name
-                ipo_record.registrar_url = snapshot.registrar_url
+                if registrar_changed or snapshot.registrar_url:
+                    # Clear an old provider URL when the assigned registrar changes;
+                    # otherwise preserve a known route through partial source data.
+                    ipo_record.registrar_url = snapshot.registrar_url
             elif snapshot.registrar_url:
                 ipo_record.registrar_url = snapshot.registrar_url
             ipo_record.source_status = snapshot.status
